@@ -1,8 +1,9 @@
 use futures::{future, Future};
-use js_sys::Promise;
+use js_sys::{Promise, Reflect};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use std::fmt;
 use wasm_bindgen_futures::future_to_promise;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response,console};
@@ -15,27 +16,49 @@ macro_rules! log {
         web_sys::console::log_1(&format!( $( $t )* ).into());
     }
 }
-#[derive(Deserialize, Serialize)]
+#[wasm_bindgen]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cell {
+    Dead = 0,
+    Alive = 1,
+}
+impl Cell {
+    fn toggle(&mut self) {
+        *self = match *self {
+            Cell::Dead => Cell::Alive,
+            Cell::Alive => Cell::Dead,
+        };
+    }
+}
+#[wasm_bindgen]
+pub struct Universe {
+    width: u32,
+    height: u32,
+    cells: Vec<Cell>,
+}
+#[derive(Deserialize, Serialize, Debug)]
 struct SubResp {
     t: Time,
     m: Vec<MessageResp>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct MessageResp {
     d: Message,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Time {
     t: String,
 }
 
 //Message is a sub object of MessageResp
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct Message {
-    uuid: String,
-    text: String,
+    row: u32,
+    col: u32,
+    tick: bool,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct PubResp {
@@ -43,15 +66,126 @@ struct PubResp {
     pub sent: String,
     pub time: String,
 }
+impl fmt::Display for Universe {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for line in self.cells.as_slice().chunks(self.width as usize) {
+            for &cell in line {
+                let symbol = if cell == Cell::Dead { '◻' } else { '◼' };
+                write!(f, "{}", symbol)?;
+            }
+            write!(f, "\n")?;
+        }
+
+        Ok(())
+    }
+}
+#[wasm_bindgen]
+impl Universe {
+    pub fn toggle_cell(&mut self, row: u32, column: u32) {
+        let idx = self.get_index(row, column);
+        self.cells[idx].toggle();
+    }
+    pub fn new() -> Universe {
+        let width = 64;
+        let height = 64;
+
+        let cells = (0..width * height)
+            .map(|i| {
+                if i % 2 == 0 || i % 7 == 0 {
+                    Cell::Alive
+                } else {
+                    Cell::Dead
+                }
+            })
+            .collect();
+
+        Universe {
+            width,
+            height,
+            cells,
+        }
+    }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn cells(&self) -> *const Cell {
+        self.cells.as_ptr()
+    }
+    pub fn render(&self) -> String {
+        self.to_string()
+    }
+    pub fn tick(&mut self) {
+        let mut next = self.cells.clone();
+
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let idx = self.get_index(row, col);
+                let cell = self.cells[idx];
+                let live_neighbors = self.live_neighbor_count(row, col);
+
+                let next_cell = match (cell, live_neighbors) {
+                    // Rule 1: Any live cell with fewer than two live neighbours
+                    // dies, as if caused by underpopulation.
+                    (Cell::Alive, x) if x < 2 => Cell::Dead,
+                    // Rule 2: Any live cell with two or three live neighbours
+                    // lives on to the next generation.
+                    (Cell::Alive, 2) | (Cell::Alive, 3) => Cell::Alive,
+                    // Rule 3: Any live cell with more than three live
+                    // neighbours dies, as if by overpopulation.
+                    (Cell::Alive, x) if x > 3 => Cell::Dead,
+                    // Rule 4: Any dead cell with exactly three live neighbours
+                    // becomes a live cell, as if by reproduction.
+                    (Cell::Dead, 3) => Cell::Alive,
+                    // All other cells remain in the same state.
+                    (otherwise, _) => otherwise,
+                };
+
+                next[idx] = next_cell;
+            }
+        }
+        self.cells = next;
+    }
+
+    fn get_index(&self, row: u32, column: u32) -> usize {
+        (row * self.width + column) as usize
+    }
+
+    fn live_neighbor_count(&self, row: u32, column: u32) -> u8 {
+        let mut count = 0;
+        for delta_row in [self.height - 1, 0, 1].iter().cloned() {
+            for delta_col in [self.width - 1, 0, 1].iter().cloned() {
+                if delta_row == 0 && delta_col == 0 {
+                    continue;
+                }
+
+                let neighbor_row = (row + delta_row) % self.height;
+                let neighbor_col = (column + delta_col) % self.width;
+                let idx = self.get_index(neighbor_row, neighbor_col);
+                count += self.cells[idx] as u8;
+            }
+        }
+        count
+    }
+    
+}
+
+
+
 
 #[wasm_bindgen]
-pub fn publish(text: &str, channel: &str, uuid: &str) -> Promise {
+pub fn publish(row: u32, col: u32, tick: bool, channel: &str) -> Promise {
     let mut opts = RequestInit::new();
     opts.method("GET");
     opts.mode(RequestMode::Cors);
     let message = Message { 
-        uuid: "person".to_string(),
-        text: "teeext".to_string()
+        row: row,
+        col: col,
+        tick: tick,
     };
     let m_json = serde_json::to_string(&message).unwrap();
     let url = format!(
@@ -96,7 +230,7 @@ pub fn publish(text: &str, channel: &str, uuid: &str) -> Promise {
 }
 
 #[wasm_bindgen]
-pub fn subscribe(time: &str, channel: &str) -> Promise {
+pub fn subscribe(time: &str, channel: &str) -> Promise{
 
     let mut opts = RequestInit::new();
     opts.method("GET");
@@ -120,6 +254,7 @@ pub fn subscribe(time: &str, channel: &str) -> Promise {
     let window = web_sys::window().unwrap();
     let request_promise = window.fetch_with_request(&request);
     log!("Inside subscribe loop");
+    
     let future = JsFuture::from(request_promise)
         .and_then(|resp_value| {
 
@@ -129,17 +264,18 @@ pub fn subscribe(time: &str, channel: &str) -> Promise {
             resp.json()
         })
         .and_then(|json_value: Promise| {
+
             // Convert this other `Promise` into a rust `Future`.
             JsFuture::from(json_value)
         })
-        .and_then(|json| {
+        .and_then(  |json| {
             // Use serde to parse the JSON into a struct.
             let resp: SubResp = json.into_serde().unwrap();
-            // Send the `Branch` struct back to JS as an `Object`.
+            log!("{:?}", resp);
             future::ok(JsValue::from_serde(&resp).unwrap())
         });
 
-    // Convert this Rust `Future` back into a JS `Promise`.
+    // // Convert this Rust `Future` back into a JS `Promise`.
     future_to_promise(future)
     
 }

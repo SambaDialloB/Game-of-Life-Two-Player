@@ -1,14 +1,13 @@
 use futures::{future, Future};
 use js_sys::{Promise, Reflect};
+use percent_encoding::{percent_encode, PATH_SEGMENT_ENCODE_SET};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use std::fmt;
 use wasm_bindgen_futures::future_to_promise;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, RequestMode, Response,console};
-use percent_encoding::{percent_encode, PATH_SEGMENT_ENCODE_SET};
-
+use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
 macro_rules! log {
@@ -30,6 +29,12 @@ impl Cell {
             Cell::Alive => Cell::Dead,
         };
     }
+    fn set_cell(&mut self, alive: bool) {
+        *self = match alive {
+            true => Cell::Alive,
+            _ => Cell::Dead,
+        };
+    }
 }
 #[wasm_bindgen]
 pub struct Universe {
@@ -45,7 +50,7 @@ struct SubResp {
 
 #[derive(Deserialize, Serialize, Debug)]
 struct MessageResp {
-    d: Message,
+    d: RCCMessage,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -55,10 +60,9 @@ struct Time {
 
 //Message is a sub object of MessageResp
 #[derive(Deserialize, Serialize, Debug)]
-struct Message {
-    row: u32,
-    col: u32,
+struct RCCMessage {
     tick: bool,
+    cells: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct PubResp {
@@ -85,11 +89,12 @@ impl Universe {
         let idx = self.get_index(row, column);
         self.cells[idx].toggle();
     }
-    pub fn new() -> Universe {
-        let width = 64;
-        let height = 64;
-
-        let cells = (0..width * height)
+    pub fn set_cell(&mut self, row: u32, column: u32, alive: bool) {
+        let idx = self.get_index(row, column);
+        self.cells[idx].set_cell(alive);
+    }
+    pub fn new(size: u32) -> Universe {
+        let cells = (0..size * size)
             .map(|i| {
                 if i % 2 == 0 || i % 7 == 0 {
                     Cell::Alive
@@ -100,8 +105,8 @@ impl Universe {
             .collect();
 
         Universe {
-            width,
-            height,
+            width: size,
+            height: size,
             cells,
         }
     }
@@ -171,30 +176,24 @@ impl Universe {
         }
         count
     }
-    
 }
 
-
-
-
 #[wasm_bindgen]
-pub fn publish(row: u32, col: u32, tick: bool, channel: &str) -> Promise {
+pub fn publish(pub_object: &JsValue, channel: &str) -> Promise {
     let mut opts = RequestInit::new();
     opts.method("GET");
     opts.mode(RequestMode::Cors);
-    let message = Message { 
-        row: row,
-        col: col,
-        tick: tick,
-    };
-    let m_json = serde_json::to_string(&message).unwrap();
+    let messages: RCCMessage = pub_object.into_serde().unwrap();
+    let m_json = serde_json::to_string(&messages).unwrap();
+    let message_encoded = percent_encode(m_json.as_bytes(), PATH_SEGMENT_ENCODE_SET);
+    log!("{}", message_encoded.to_string());
     let url = format!(
         "https://{host}/publish/{pubkey}/{subkey}/0/{channel}/0/{message}",
         host = "ps.pndsn.com",
-        pubkey = "INSERT_PUB_KEY_HERE",
-        subkey = "INSERT_SUB_KEY_HERE",
+        pubkey = "INSET_PUB_KEY_HERE",
+        subkey = "INSET_SUB_KEY_HERE",
         channel = percent_encode(channel.as_bytes(), PATH_SEGMENT_ENCODE_SET),
-        message = percent_encode(m_json.as_bytes(), PATH_SEGMENT_ENCODE_SET),
+        message = message_encoded,
     );
     let request = Request::new_with_str_and_init(&url, &opts).unwrap();
 
@@ -230,8 +229,7 @@ pub fn publish(row: u32, col: u32, tick: bool, channel: &str) -> Promise {
 }
 
 #[wasm_bindgen]
-pub fn subscribe(time: &str, channel: &str) -> Promise{
-
+pub fn subscribe(time: &str, channel: &str) -> Promise {
     let mut opts = RequestInit::new();
     opts.method("GET");
     opts.mode(RequestMode::Cors);
@@ -239,7 +237,7 @@ pub fn subscribe(time: &str, channel: &str) -> Promise{
     let url = format!(
         "https://{host}/v2/subscribe/{subkey}/{channel}/0/{time}",
         host = "ps.pndsn.com",
-        subkey = "INSERT_SUB_KEY_HERE",
+        subkey = "INSET_SUB_KEY_HERE",
         channel = percent_encode(channel.as_bytes(), PATH_SEGMENT_ENCODE_SET),
         time = percent_encode(time.as_bytes(), PATH_SEGMENT_ENCODE_SET),
     );
@@ -254,28 +252,24 @@ pub fn subscribe(time: &str, channel: &str) -> Promise{
     let window = web_sys::window().unwrap();
     let request_promise = window.fetch_with_request(&request);
     log!("Inside subscribe loop");
-    
+
     let future = JsFuture::from(request_promise)
         .and_then(|resp_value| {
-
             // `resp_value` is a `Response` object.
             assert!(resp_value.is_instance_of::<Response>());
             let resp: Response = resp_value.dyn_into().unwrap();
             resp.json()
         })
         .and_then(|json_value: Promise| {
-
             // Convert this other `Promise` into a rust `Future`.
             JsFuture::from(json_value)
         })
-        .and_then(  |json| {
+        .and_then(|json| {
             // Use serde to parse the JSON into a struct.
             let resp: SubResp = json.into_serde().unwrap();
-            log!("{:?}", resp);
             future::ok(JsValue::from_serde(&resp).unwrap())
         });
 
     // // Convert this Rust `Future` back into a JS `Promise`.
     future_to_promise(future)
-    
 }

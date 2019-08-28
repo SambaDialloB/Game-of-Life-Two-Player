@@ -7,7 +7,7 @@ import {
     memory
 } from "../pkg/wasm_pubsub_bg.wasm";
 
-const CELL_SIZE = 10; // px
+const CELL_SIZE = 5; // px
 const MAP_SIZE = 128;
 const GRID_COLOR = "#CCCCCC";
 const BLACK_COLOR = "#000000";
@@ -35,10 +35,8 @@ async function subscribe() {
 
                         universe.set_cell(row, col, alive);
                         drawACell(row, col, alive);
-
                     }
-                }
-                
+                }  
             }
         });
     }
@@ -107,36 +105,36 @@ const drawCells = () => {
     
     ctx.fillStyle = YELLOW_COLOR;
     for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-        const idx = getIndex(row, col);
-        if (cells[idx] !== Cell.Alive) {
-        continue;
-        }
+        for (let col = 0; col < width; col++) {
+            const idx = getIndex(row, col);
+            if (cells[idx] !== Cell.Alive) {
+            continue;
+            }
 
-        ctx.fillRect(
-        col * (CELL_SIZE + 1) + 1,
-        row * (CELL_SIZE + 1) + 1,
-        CELL_SIZE,
-        CELL_SIZE
-        );
-    }
+            ctx.fillRect(
+            col * (CELL_SIZE + 1) + 1,
+            row * (CELL_SIZE + 1) + 1,
+            CELL_SIZE,
+            CELL_SIZE
+            );
+        }
     }
 
     ctx.fillStyle = BLACK_COLOR;
     for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-        const idx = getIndex(row, col);
-        if (cells[idx] !== Cell.Dead) {
-        continue;
-        }
+        for (let col = 0; col < width; col++) {
+            const idx = getIndex(row, col);
+            if (cells[idx] !== Cell.Dead) {
+            continue;
+            }
 
-        ctx.fillRect(
-        col * (CELL_SIZE + 1) + 1,
-        row * (CELL_SIZE + 1) + 1,
-        CELL_SIZE,
-        CELL_SIZE
-        );
-    }
+            ctx.fillRect(
+            col * (CELL_SIZE + 1) + 1,
+            row * (CELL_SIZE + 1) + 1,
+            CELL_SIZE,
+            CELL_SIZE
+            );
+        }
     }
     ctx.stroke();
 };
@@ -168,8 +166,6 @@ canvas.addEventListener("mousedown", event => {
 
     drawACell(row, col, userAlive);
     universe.set_cell(row, col, userAlive);
-    
-    
 });
 canvas.addEventListener("mousemove", event => {
     if(mDown){
@@ -190,14 +186,11 @@ canvas.addEventListener("mouseup", event => {
     let sArray = new Array();
     let rcString = "";
     squares.forEach((value, key, map) => {
-        
         rcString += key + " " + value.toString() + " ";
-        
     });
     rust.publish({tick: false, cells: rcString.slice(0, -1)}, "global").then((data) => {
         console.log(data.sent);
     });
-
     squares = new Map();
     lastSquare = "";
 });
@@ -206,17 +199,20 @@ drawGrid();
 drawCells();
 requestAnimationFrame(renderLoop);
 
-
 document.getElementById("tick").onclick =  () => {
-    
     rust.publish({tick: true, cells: ""}, "global").then((data) => {
         console.log(data.sent);
     });
 };
-document.getElementById("yellow_btn").onclick =  () => {
-    userAlive = true;
-};
-document.getElementById("black_btn").onclick =  () => {
-    userAlive = false;
+document.getElementById("color_btn").onclick =  () => {
+    userAlive = !userAlive;
+
+    if(userAlive){
+        document.getElementById("user_color").style.backgroundColor = YELLOW_COLOR;
+        document.getElementById("color_btn").innerHTML = "Choose Black";
+    }else{
+        document.getElementById("user_color").style.backgroundColor = BLACK_COLOR;
+        document.getElementById("color_btn").innerHTML = "Choose Yellow";
+    }
 };
 subscribe();

@@ -16,13 +16,29 @@
         align-items: center;
         justify-content: center;
       }
+      #container {
+        display: inline-block;
+      }
+      #user_color{
+        border-style: solid;
+        border-width: 1px;
+        width: 10px;
+        height: 10px;
+        background-color: black;
+        display: inline-block;
+      }
     </style>
   </head>
   <body>
-    <button id="yellow_btn" type="button">Choose Yellow</button>
-    <button id="black_btn" type="button">Choose Black</button>
+    <div id="container">
+      <button id="color_btn" type="button">Choose Yellow</button>
+      <!-- <button id="black_btn" type="button">Choose Black</button> -->
+      User Color: 
+      <span id="user_color"></span>
+      <button id="tick" type="button">Tick Universe!</button>
+    </div>
     <canvas id="game-of-life-canvas"></canvas>
-    <button id="tick" type="button">Tick Universe!</button>
+    
     <p id="p1">Local Universe Ticked 0 times</p>
   </body>
 </html>

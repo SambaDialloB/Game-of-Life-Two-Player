@@ -1,5 +1,5 @@
 use futures::{future, Future};
-use js_sys::{Promise, Reflect};
+use js_sys::{Promise};
 use percent_encoding::{percent_encode, PATH_SEGMENT_ENCODE_SET};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::future_to_promise;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{console, Request, RequestInit, RequestMode, Response};
+use web_sys::{Request, RequestInit, RequestMode, Response};
 
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
 macro_rules! log {

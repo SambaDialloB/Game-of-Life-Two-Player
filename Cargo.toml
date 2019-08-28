@@ -1,5 +1,5 @@
 [package]
-name = "wasm-pubsub"
+name = "game-of-life-two-player"
 version = "0.1.0"
 authors = ["Samba Diallo <samba.diallo@pubnub.com>"]
 edition = "2018"
